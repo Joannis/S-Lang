@@ -1,30 +1,11 @@
 import LLVM
 import Foundation
 
-// executable "test"
-let testModule = Module(name: "test")
+let project = Project(named: "test")
 
-// Generate executable IR
-let testModuleBuilder = IRBuilder(module: testModule)
+project.append(file: try SourceFile(atPath: "/Users/joannisorlandos/Desktop/test.slang"))
 
-// Add the main function
-let mainFunction = testModuleBuilder.addFunction(
-    "main",
-    type: FunctionType(
-        argTypes: [],
-       returnType: IntType(width: 64)
-    )
-)
-
-let entry = mainFunction.appendBasicBlock(named: "entry")
-testModuleBuilder.positionAtEnd(of: entry)
-
-let constant = IntType.int64.constant(21)
-let sum = testModuleBuilder.buildAdd(constant, constant)
-testModuleBuilder.buildRet(sum)
-
-try testModule.verify()
-try TargetMachine().emitToFile(module: testModule, type: .object, path: "/Users/joannisorlandos/Desktop/testexec.o")
+let object = try project.compile()
 
 @discardableResult
 func shell(path launchPath: String, args arguments: [String]) -> String {
@@ -51,4 +32,4 @@ func getClangPath() -> String {
     return shell(path: "/usr/bin/which", args: ["clang"])
 }
 
-shell(path: getClangPath(), args: ["-o", "/Users/joannisorlandos/Desktop/testexec", "/Users/joannisorlandos/Desktop/testexec.o"])
+shell(path: getClangPath(), args: ["-o", "/Users/joannisorlandos/Desktop/testexec", object])
