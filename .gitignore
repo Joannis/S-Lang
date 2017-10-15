@@ -1,0 +1,14 @@
+*.playground
+.DS_Store
+/.build
+/Packages
+/*.xcodeproj
+*.bc
+*.ll
+.vscode
+main
+main.o
+.kai
+wip.kai
+wip
+deps
