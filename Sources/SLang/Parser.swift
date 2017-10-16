@@ -163,18 +163,16 @@ extension SourceFile {
     }
     
     fileprivate func scanType(forDeclaration declaration: String) throws {
-        guard data[position] == SourceCharacters.colon.rawValue else {
-            throw CompilerError.missingTypeForDeclaration(declaration)
-        }
+        try assertCharactersAfterWhitespace()
         
-        position = position &+ 1
+        try consume(.colon)
         
         try assertCharactersAfterWhitespace()
         
         guard data[position] == SourceCharacters.leftParenthesis.rawValue else {
             let word = try scanNonEmptyString()
             
-            self.state = .type(try LanguageType(named: word))
+            self.state = .type(declaration, try LanguageType(named: word))
             return
         }
         
@@ -184,15 +182,7 @@ extension SourceFile {
         self.state = .function(declaration, signature)
     }
     
-    fileprivate func scanAssignment(for type: LanguageType) throws {
-        
-    }
-    
-    fileprivate func scanLiteral(expecting type: LanguageType) throws -> IRValue? {
-        try assertCharactersAfterWhitespace()
-        
-        let literal = scanString()
-        
+    fileprivate func readLiteral(from literal: String, expecting type: LanguageType) -> IRValue? {
         guard literal.characters.count > 0 else {
             return nil
         }
@@ -204,31 +194,85 @@ extension SourceFile {
         return nil
     }
     
-    fileprivate func compileStatement(inFunction signature: Signature, buildingInto builder: IRBuilder) throws {
+    fileprivate func scanLiteral(expecting type: LanguageType) throws -> IRValue? {
+        try assertCharactersAfterWhitespace()
+        
+        let literal = scanString()
+        
+        return readLiteral(from: literal, expecting: type)
+    }
+    
+    fileprivate func consume(_ char: SourceCharacters) throws {
+        guard data[position] == char.rawValue else {
+            throw CompilerError.missingAssignment
+        }
+        
+        position = position &+ 1
+    }
+    
+    fileprivate func scanAssignment(for type: LanguageType) throws -> IRValue {
+        try assertCharactersAfterWhitespace()
+        
+        try consume(SourceCharacters.equal)
+        
+        try assertCharactersAfterWhitespace()
+        
+        guard let literal = try scanLiteral(expecting: type) else {
+            // TODO: Custom types
+            throw CompilerError.unknownType(type.name)
+        }
+        
+        return literal
+    }
+    
+    fileprivate func compileStatement(inFunction signature: Signature, buildingInto builder: IRBuilder, scope: Scope) throws {
         try assertCharactersAfterWhitespace()
         
         let word = scanString()
         
         switch word {
         case "return":
-            if let literal = try scanLiteral(expecting: signature.returnType) {
+            try assertCharactersAfterWhitespace()
+            let string = scanString()
+            
+            if let literal = readLiteral(from: string, expecting: signature.returnType) {
                 builder.buildRet(literal)
+            } else if let variable = scope[string] {
+                let load = builder.buildLoad(variable)
+                builder.buildRet(load)
             } else {
-                throw CompilerError.unknownStatement(word)
+                throw CompilerError.unknownStatement(string)
             }
         default:
-            throw CompilerError.unknownStatement(word)
+            try scanType(forDeclaration: word)
+            
+            switch state {
+            case .type(_, let type):
+                let value = builder.buildAlloca(type: type.irType, name: word)
+                
+                scope.variables.append((word, type, value))
+                
+                let assigned = try scanAssignment(for: type)
+                
+                builder.buildStore(assigned, to: value)
+            case .function(_, _):
+                fatalError("Unsupported")
+            default:
+                fatalError("Impossible")
+            }
         }
     }
     
     fileprivate func scanCodeBlock(inFunction signature: Signature, buildingInto builder: IRBuilder) throws {
         try assertCharactersAfterWhitespace()
         
-        guard data[position] == SourceCharacters.codeBlockOpen.rawValue else {
-            return
-        }
+        try consume(.equal)
         
-        position = position &+ 1
+        try assertCharactersAfterWhitespace()
+        
+        try consume(.codeBlockOpen)
+        
+        let scope = Scope()
         
         while position < data.count {
             try assertCharactersAfterWhitespace()
@@ -238,11 +282,11 @@ extension SourceFile {
                 return
             }
             
-            try compileStatement(inFunction: signature, buildingInto: builder)
+            try compileStatement(inFunction: signature, buildingInto: builder, scope: scope)
         }
     }
     
-    public func compile(into builder: IRBuilder) throws {
+    public func compile(into builder: IRBuilder, partOf project: Project) throws {
         while position < data.count {
             skipWhitespace()
             
@@ -250,13 +294,19 @@ extension SourceFile {
                 return
             }
             
+            guard builderState == .global else {
+                fatalError()
+            }
+            
             switch state {
             case .none:
                 try scanAnything()
             case .declaration(let name):
                 try scanType(forDeclaration: name)
-            case .type(let type):
-                try scanAssignment(for: type)
+            case .type(let name, let type):
+                let value = try scanAssignment(for: type)
+                
+                try project.globals.append(builder.addGlobal(name, initializer: value))
             case .function(let name, let signature):
                 let type = FunctionType(
                     argTypes: signature.arguments.map { type in

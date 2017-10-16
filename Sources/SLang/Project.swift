@@ -1,8 +1,25 @@
 import LLVM
 
+final class Globals {
+    init() {}
+    
+    var names = [String]()
+    var globals = [Global]()
+    
+    func append(_ global: Global) throws {
+        if self.names.contains(global.name) {
+            throw CompilerError.redundantDefinitionOfGlobal(global.name)
+        }
+        
+        globals.append(global)
+        names.append(global.name)
+    }
+}
+
 public final class Project {
     var sources = [SourceFile]()
     
+    let globals = Globals()
     let name: String
     let module: Module
     
@@ -21,7 +38,7 @@ extension Project {
         let builder = IRBuilder(module: self.module)
         
         for source in sources {
-            try source.compile(into: builder)
+            try source.compile(into: builder, partOf: self)
         }
         
         try module.verify()

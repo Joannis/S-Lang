@@ -6,4 +6,6 @@ enum CompilerError: Error {
     case unexpectedEOF
     case missingCommaAfterArguments(Arguments)
     case missingReturnType
+    case missingAssignment
+    case redundantDefinitionOfGlobal(String)
 }

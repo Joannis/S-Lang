@@ -4,8 +4,29 @@ import LLVM
 enum State {
     case none
     case declaration(String)
-    case type(LanguageType)
+    case type(String, LanguageType)
     case function(String, Signature)
+}
+
+final class Scope {
+    var `super`: Scope?
+    
+    var variables = [(String, LanguageType, IRValue)]()
+    
+    subscript(expected: String) -> IRValue? {
+        for (name, _, value) in variables where name == expected {
+            return value
+        }
+        
+        return nil
+    }
+
+    init() {}
+}
+
+enum BuilderState {
+    case global
+    case codeBlock
 }
 
 struct LanguageType {
@@ -70,6 +91,7 @@ public final class SourceFile {
     let data: Data
     var position = 0
     var state = State.none
+    var builderState = BuilderState.global
     
     public init(atPath path: String) throws {
         guard let file = FileManager.default.contents(atPath: path) else {
