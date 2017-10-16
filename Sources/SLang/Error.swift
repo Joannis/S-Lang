@@ -3,6 +3,8 @@ enum CompilerError: Error {
     case missingTypeForDeclaration(String)
     case unknownType(String)
     case unknownStatement(String)
+    case unknownVariable(String)
+    case unknownFunction(String)
     case unexpectedEOF
     case missingCommaAfterArguments(Arguments)
     case missingReturnType

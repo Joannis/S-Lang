@@ -237,16 +237,40 @@ extension SourceFile {
             try assertCharactersAfterWhitespace()
             let string = scanString()
             
-            if let literal = readLiteral(from: string, expecting: signature.returnType) {
+            let isFunction = position < data.count && data[position] == SourceCharacters.leftParenthesis.rawValue
+            
+            if isFunction {
+                position = position &+ 1
+                
+                guard let function = project.functions[string] else {
+                    throw CompilerError.unknownFunction(string)
+                }
+                
+                let arguments = [IRValue]()
+                
+                try consume(.rightParenthesis)
+                
+                let call = builder.buildCall(function, args: arguments)
+                let result = builder.buildAlloca(type: call.type)
+                builder.buildStore(call, to: result)
+                let returnValue = builder.buildLoad(result)
+                
+                builder.buildRet(returnValue)
+                return
+            }
+            
+            if string.characters.count == 0 {
+                builder.buildRetVoid()
+            } else if let literal = readLiteral(from: string, expecting: signature.returnType) {
                 builder.buildRet(literal)
             } else if let variable = scope[string] {
-                let load = builder.buildLoad(variable)
-                builder.buildRet(load)
+                let variable = builder.buildLoad(variable)
+                builder.buildRet(variable)
             } else if let global = project.globals[string] {
-                let load = builder.buildLoad(global)
-                builder.buildRet(load)
+                let global = builder.buildLoad(global)
+                builder.buildRet(global)
             } else {
-                throw CompilerError.unknownStatement(string)
+                throw CompilerError.unknownVariable(string)
             }
         default:
             try scanType(forDeclaration: word)
@@ -284,11 +308,14 @@ extension SourceFile {
             
             if data[position] == SourceCharacters.codeBlockClose.rawValue {
                 position = position &+ 1
+                state = .none
                 return
             }
             
             try compileStatement(inFunction: signature, buildingInto: builder, scope: scope)
         }
+        
+        throw CompilerError.unexpectedEOF
     }
     
     public func compile(into builder: IRBuilder) throws {
@@ -325,6 +352,8 @@ extension SourceFile {
                 builder.positionAtEnd(of: entry)
                 
                 try scanCodeBlock(inFunction: signature, buildingInto: builder)
+                
+                try project.functions.append(function)
             }
         }
     }
