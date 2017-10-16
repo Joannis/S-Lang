@@ -1,0 +1,43 @@
+{
+  "object": {
+    "pins": [
+      {
+        "package": "CLibGit2",
+        "repositoryURL": "https://github.com/BrettRToomey/CLibGit2.git",
+        "state": {
+          "branch": "master",
+          "revision": "14f8e54929276ccf7c9f93130035bd860192d726",
+          "version": null
+        }
+      },
+      {
+        "package": "LLVM",
+        "repositoryURL": "https://github.com/vdka/LLVMSwift.git",
+        "state": {
+          "branch": "master",
+          "revision": "179d5614874e4c7dda4b830911d4d225d1c7b758",
+          "version": null
+        }
+      },
+      {
+        "package": "OrderedDictionary",
+        "repositoryURL": "https://github.com/vdka/OrderedDictionary.git",
+        "state": {
+          "branch": "master",
+          "revision": "950ad4134720bc95e3315f8f5c25d01090a0114a",
+          "version": null
+        }
+      },
+      {
+        "package": "cllvm",
+        "repositoryURL": "https://github.com/trill-lang/cllvm.git",
+        "state": {
+          "branch": null,
+          "revision": "e85a8ebe9f45cff9fa31b43c32662318232b392a",
+          "version": "0.0.3"
+        }
+      }
+    ]
+  },
+  "version": 1
+}

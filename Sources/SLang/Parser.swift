@@ -227,11 +227,11 @@ extension SourceFile {
         return literal
     }
     
-    fileprivate func isFunctionCall() throws -> Bool {
+    fileprivate func isFunctionCall()    -> Bool {
         return position < data.count && data[position] == SourceCharacters.leftParenthesis.rawValue
     }
     
-    fileprivate func callFunction(named name: String, builder: IRBuilder) -> IRValue {
+    fileprivate func callFunction(named name: String, builder: IRBuilder) throws -> IRValue {
         // Enter function call
         position = position &+ 1
         

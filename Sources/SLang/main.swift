@@ -3,7 +3,7 @@ import Foundation
 
 let project = Project(named: "test")
 
-project.append(file: try SourceFile(atPath: "/Users/joannisorlandos/Desktop/test.slang", project: project))
+project.append(file: try SourceFile(atPath: "/Users/joannis/Desktop/testexec.slang", project: project))
 
 let object = try project.compile()
 
@@ -32,4 +32,4 @@ func getClangPath() -> String {
     return shell(path: "/usr/bin/which", args: ["clang"])
 }
 
-shell(path: getClangPath(), args: ["-o", "/Users/joannisorlandos/Desktop/testexec", object])
+shell(path: getClangPath(), args: ["-o", "/Users/joannis/Desktop/testexec", object])

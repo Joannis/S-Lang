@@ -88,7 +88,7 @@ extension Project {
         
         try module.verify()
         
-        let object = "/Users/joannisorlandos/Desktop/\(name).o"
+        let object = "/Users/joannis/Desktop/\(name).o"
         
         try TargetMachine().emitToFile(module: module, type: .object, path: object)
         
