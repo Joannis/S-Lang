@@ -5,6 +5,7 @@ enum CompilerError: Error {
     case unknownStatement(String)
     case unknownVariable(String)
     case unknownFunction(String)
+    case unknownOperation
     case unexpectedEOF
     case missingCommaAfterArguments(Arguments)
     case missingReturnType

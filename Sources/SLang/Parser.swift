@@ -45,9 +45,13 @@ fileprivate enum SourceCharacters: UInt8 {
 fileprivate let specialCharacters = whitespace + SourceCharacters.all
 
 extension SourceFile {
-    fileprivate func skipWhitespace() {
+    fileprivate func skipWhitespace(includingNewline: Bool) {
         while position < data.count {
             guard whitespace.contains(data[position]) else {
+                return
+            }
+            
+            if !includingNewline && data[position] == 0x0a {
                 return
             }
             
@@ -89,22 +93,18 @@ extension SourceFile {
     }
     
     fileprivate func assertCharactersAfterWhitespace() throws {
-        skipWhitespace()
+        skipWhitespace(includingNewline: true)
         try assertMoreCharacters()
     }
     
-    fileprivate func scanAnything() throws {
-        let word = scanString()
-        
-        guard word.characters.count > 0 else {
-            return
+    fileprivate func charactersBeforeNewline() -> Bool {
+        skipWhitespace(includingNewline: false)
+    
+        guard position < data.count else {
+            return false
         }
         
-        switch word {
-//        case "if":
-        default:
-            self.state = .declaration(word)
-        }
+        return data[position] != 0x0a
     }
     
     fileprivate func scanSignature() throws -> Signature {
@@ -162,24 +162,31 @@ extension SourceFile {
         return Signature(arguments: arguments, returnType: type)
     }
     
-    fileprivate func scanType(forDeclaration declaration: String) throws {
+    fileprivate func scanType() throws -> LanguageType {
+        let name = try scanNonEmptyString()
+        return try LanguageType(named: name)
+    }
+    
+    fileprivate func scanDeclaration() throws -> Declaration {
+        try assertCharactersAfterWhitespace()
+        
+        let name = try scanNonEmptyString()
         try assertCharactersAfterWhitespace()
         
         try consume(.colon)
-        
         try assertCharactersAfterWhitespace()
         
         guard data[position] == SourceCharacters.leftParenthesis.rawValue else {
-            let word = try scanNonEmptyString()
+            let type = try scanType()
             
-            self.state = .type(declaration, try LanguageType(named: word))
-            return
+            return .global(named: name, type: type)
         }
         
         position = position &+ 1
         
         let signature = try scanSignature()
-        self.state = .function(declaration, signature)
+        
+        return .function(named: name, signature: signature)
     }
     
     fileprivate func readLiteral(from literal: String, expecting type: LanguageType) -> IRValue? {
@@ -227,11 +234,11 @@ extension SourceFile {
         return literal
     }
     
-    fileprivate func isFunctionCall()    -> Bool {
+    fileprivate func isFunctionCall() -> Bool {
         return position < data.count && data[position] == SourceCharacters.leftParenthesis.rawValue
     }
     
-    fileprivate func callFunction(named name: String, builder: IRBuilder) throws -> IRValue {
+    fileprivate func callFunction(named name: String) throws -> IRValue {
         // Enter function call
         position = position &+ 1
         
@@ -249,57 +256,72 @@ extension SourceFile {
         return builder.buildLoad(result)
     }
     
-    fileprivate func compileStatement(inFunction signature: Signature, buildingInto builder: IRBuilder, scope: Scope) throws {
+    fileprivate func getValue(ofType type: LanguageType, scope: Scope) throws -> IRValue {
+        let string = try scanNonEmptyString()
+        
+        if isFunctionCall() {
+            return try callFunction(named: string)
+        }
+        
+        if let literal = readLiteral(from: string, expecting: type) {
+            return literal
+        } else if let variable = scope[string] {
+            return builder.buildLoad(variable)
+        } else if let global = project.globals[string] {
+            return builder.buildLoad(global)
+        }
+        
+        throw CompilerError.unknownVariable(string)
+    }
+    
+    fileprivate func compileStatement(inFunction signature: Signature, scope: Scope) throws {
         try assertCharactersAfterWhitespace()
         
-        let word = scanString()
+        let name = try scanNonEmptyString()
         
-        switch word {
+        switch name {
         case "return":
-            try assertCharactersAfterWhitespace()
-            let string = scanString()
-            
-            if isFunctionCall() {
-                let result = try callFunction(named: string, builder: builder)
-                
-                builder.buildRet(result)
+            if !charactersBeforeNewline() {
+                builder.buildRetVoid()
                 return
             }
             
-            if string.characters.count == 0 {
-                builder.buildRetVoid()
-            } else if let literal = readLiteral(from: string, expecting: signature.returnType) {
-                builder.buildRet(literal)
-            } else if let variable = scope[string] {
-                let variable = builder.buildLoad(variable)
-                builder.buildRet(variable)
-            } else if let global = project.globals[string] {
-                let global = builder.buildLoad(global)
-                builder.buildRet(global)
-            } else {
-                throw CompilerError.unknownVariable(string)
-            }
-        default:
-            try scanType(forDeclaration: word)
+            try assertCharactersAfterWhitespace()
             
-            switch state {
-            case .type(_, let type):
-                let value = builder.buildAlloca(type: type.irType, name: word)
+            var value = try getValue(ofType: signature.returnType, scope: scope)
+            
+            while charactersBeforeNewline() {
+                let character = data[position]
+                position = position &+ 1
                 
-                scope.variables.append((word, type, value))
+                try assertCharactersAfterWhitespace()
                 
-                let assigned = try scanAssignment(for: type)
+                let other = try getValue(ofType: signature.returnType, scope: scope)
                 
-                builder.buildStore(assigned, to: value)
-            case .function(_, _):
-                fatalError("Unsupported")
-            default:
-                fatalError("Impossible")
+                switch character {
+                case SourceCharacters.plus.rawValue:
+                    value = builder.buildAdd(value, other)
+                case SourceCharacters.minus.rawValue:
+                    value = builder.buildSub(value, other)
+                default:
+                    throw CompilerError.unknownOperation
+                }
             }
+            
+            builder.buildRet(value)
+        default:
+            let type = try scanType()
+            let value = builder.buildAlloca(type: type.irType, name: name)
+            
+            scope.variables.append((name, type, value))
+            
+            let assigned = try scanAssignment(for: type)
+            
+            builder.buildStore(assigned, to: value)
         }
     }
     
-    fileprivate func scanCodeBlock(inFunction signature: Signature, buildingInto builder: IRBuilder) throws {
+    fileprivate func scanCodeBlock(inFunction signature: Signature) throws {
         try assertCharactersAfterWhitespace()
         
         try consume(.equal)
@@ -319,15 +341,15 @@ extension SourceFile {
                 return
             }
             
-            try compileStatement(inFunction: signature, buildingInto: builder, scope: scope)
+            try compileStatement(inFunction: signature, scope: scope)
         }
         
         throw CompilerError.unexpectedEOF
     }
     
-    public func compile(into builder: IRBuilder) throws {
+    public func compile() throws {
         while position < data.count {
-            skipWhitespace()
+            skipWhitespace(includingNewline: true)
             
             guard position < data.count else {
                 return
@@ -337,12 +359,8 @@ extension SourceFile {
                 fatalError()
             }
             
-            switch state {
-            case .none:
-                try scanAnything()
-            case .declaration(let name):
-                try scanType(forDeclaration: name)
-            case .type(let name, let type):
+            switch try scanDeclaration() {
+            case .global(let name, let type):
                 let value = try scanAssignment(for: type)
                 
                 try project.globals.append(builder.addGlobal(name, initializer: value))
@@ -358,7 +376,7 @@ extension SourceFile {
                 let entry = function.appendBasicBlock(named: "entry")
                 builder.positionAtEnd(of: entry)
                 
-                try scanCodeBlock(inFunction: signature, buildingInto: builder)
+                try scanCodeBlock(inFunction: signature)
                 
                 try project.functions.append(function)
             }

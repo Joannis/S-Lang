@@ -67,10 +67,12 @@ public final class Project {
     let functions = Functions()
     let name: String
     let module: Module
+    let builder: IRBuilder
     
     public init(named name: String) {
         self.name = name
         self.module = Module(name: name)
+        self.builder = IRBuilder(module: self.module)
     }
     
     public func append(file: SourceFile) {
@@ -80,10 +82,8 @@ public final class Project {
 
 extension Project {
     public func compile() throws -> String {
-        let builder = IRBuilder(module: self.module)
-        
         for source in sources {
-            try source.compile(into: builder)
+            try source.compile()
         }
         
         try module.verify()
