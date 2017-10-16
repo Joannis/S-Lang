@@ -18,7 +18,7 @@ final class Scope {
             return value
         }
         
-        return nil
+        return self.super?[expected]
     }
 
     init() {}
@@ -91,14 +91,16 @@ public final class SourceFile {
     let data: Data
     var position = 0
     var state = State.none
+    let project: Project
     var builderState = BuilderState.global
     
-    public init(atPath path: String) throws {
+    public init(atPath path: String, project: Project) throws {
         guard let file = FileManager.default.contents(atPath: path) else {
             throw CompilerError.fileNotFound(atPath: path)
         }
         
         self.data = file
+        self.project = project
     }
 }
 

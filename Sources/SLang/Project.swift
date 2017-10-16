@@ -14,6 +14,20 @@ final class Globals {
         globals.append(global)
         names.append(global.name)
     }
+    
+    subscript(name: String) -> Global? {
+        var index = 0
+        
+        while index < names.count {
+            if names[index] == name {
+                return globals[index]
+            }
+            
+            index = index &+ 1
+        }
+        
+        return nil
+    }
 }
 
 public final class Project {
@@ -38,7 +52,7 @@ extension Project {
         let builder = IRBuilder(module: self.module)
         
         for source in sources {
-            try source.compile(into: builder, partOf: self)
+            try source.compile(into: builder)
         }
         
         try module.verify()

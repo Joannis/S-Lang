@@ -222,6 +222,8 @@ extension SourceFile {
             throw CompilerError.unknownType(type.name)
         }
         
+        state = .none
+        
         return literal
     }
     
@@ -239,6 +241,9 @@ extension SourceFile {
                 builder.buildRet(literal)
             } else if let variable = scope[string] {
                 let load = builder.buildLoad(variable)
+                builder.buildRet(load)
+            } else if let global = project.globals[string] {
+                let load = builder.buildLoad(global)
                 builder.buildRet(load)
             } else {
                 throw CompilerError.unknownStatement(string)
@@ -286,7 +291,7 @@ extension SourceFile {
         }
     }
     
-    public func compile(into builder: IRBuilder, partOf project: Project) throws {
+    public func compile(into builder: IRBuilder) throws {
         while position < data.count {
             skipWhitespace()
             

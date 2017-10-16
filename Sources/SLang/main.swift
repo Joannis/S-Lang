@@ -3,7 +3,7 @@ import Foundation
 
 let project = Project(named: "test")
 
-project.append(file: try SourceFile(atPath: "/Users/joannisorlandos/Desktop/test.slang"))
+project.append(file: try SourceFile(atPath: "/Users/joannisorlandos/Desktop/test.slang", project: project))
 
 let object = try project.compile()
 
