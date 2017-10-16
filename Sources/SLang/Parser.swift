@@ -227,6 +227,28 @@ extension SourceFile {
         return literal
     }
     
+    fileprivate func isFunctionCall() throws -> Bool {
+        return position < data.count && data[position] == SourceCharacters.leftParenthesis.rawValue
+    }
+    
+    fileprivate func callFunction(named name: String, builder: IRBuilder) -> IRValue {
+        // Enter function call
+        position = position &+ 1
+        
+        guard let function = project.functions[name] else {
+            throw CompilerError.unknownFunction(name)
+        }
+        
+        let arguments = [IRValue]()
+        
+        try consume(.rightParenthesis)
+        
+        let call = builder.buildCall(function, args: arguments)
+        let result = builder.buildAlloca(type: call.type)
+        builder.buildStore(call, to: result)
+        return builder.buildLoad(result)
+    }
+    
     fileprivate func compileStatement(inFunction signature: Signature, buildingInto builder: IRBuilder, scope: Scope) throws {
         try assertCharactersAfterWhitespace()
         
@@ -237,25 +259,10 @@ extension SourceFile {
             try assertCharactersAfterWhitespace()
             let string = scanString()
             
-            let isFunction = position < data.count && data[position] == SourceCharacters.leftParenthesis.rawValue
-            
-            if isFunction {
-                position = position &+ 1
+            if isFunctionCall() {
+                let result = try callFunction(named: string, builder: builder)
                 
-                guard let function = project.functions[string] else {
-                    throw CompilerError.unknownFunction(string)
-                }
-                
-                let arguments = [IRValue]()
-                
-                try consume(.rightParenthesis)
-                
-                let call = builder.buildCall(function, args: arguments)
-                let result = builder.buildAlloca(type: call.type)
-                builder.buildStore(call, to: result)
-                let returnValue = builder.buildLoad(result)
-                
-                builder.buildRet(returnValue)
+                builder.buildRet(result)
                 return
             }
             
