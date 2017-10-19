@@ -5,7 +5,7 @@ let project = Project(named: "test")
 
 project.append(file: try SourceFile(atPath: "/Users/joannisorlandos/Desktop/testexec.slang", project: project))
 
-let object = try project.compile()
+let object = try project.compile(dumping: true)
 
 @discardableResult
 func shell(path launchPath: String, args arguments: [String]) -> String {

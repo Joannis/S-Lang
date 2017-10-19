@@ -52,12 +52,16 @@ public final class Project {
 }
 
 extension Project {
-    public func compile() throws -> String {
+    public func compile(dumping: Bool = false) throws -> String {
         for source in sources {
             try source.compile()
         }
         
         try module.verify()
+        
+        if dumping {
+            module.dump()
+        }
         
         let object = "/Users/joannisorlandos/Desktop/\(name).o"
         
