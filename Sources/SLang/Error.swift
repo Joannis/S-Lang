@@ -6,6 +6,7 @@ enum CompilerError: Error {
     case unknownVariable(String)
     case unknownFunction(String)
     case unknownOperation
+    case invalidTypeDefinition
     case unexpectedEOF
     case missingCommaAfterArguments(Arguments)
     case missingReturnType

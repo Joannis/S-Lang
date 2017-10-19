@@ -1,56 +1,26 @@
 import LLVM
 
-final class Globals {
+final class Manager<Type> {
     init() {}
     
     var names = [String]()
-    var globals = [Global]()
+    var data = [Type]()
     
-    func append(_ global: Global) throws {
-        if self.names.contains(global.name) {
-            throw CompilerError.redundantDefinitionOfGlobal(global.name)
+    func append(_ data: Type, named name: String) throws {
+        if self.names.contains(name) {
+            throw CompilerError.redundantDefinitionOfGlobal(name)
         }
         
-        globals.append(global)
-        names.append(global.name)
+        self.data.append(data)
+        names.append(name)
     }
     
-    subscript(name: String) -> Global? {
+    subscript(name: String) -> Type? {
         var index = 0
         
         while index < names.count {
             if names[index] == name {
-                return globals[index]
-            }
-            
-            index = index &+ 1
-        }
-        
-        return nil
-    }
-}
-
-final class Functions {
-    init() {}
-    
-    var names = [String]()
-    var functions = [Function]()
-    
-    func append(_ function: Function) throws {
-        if self.names.contains(function.name) {
-            throw CompilerError.redundantDefinitionOfGlobal(function.name)
-        }
-        
-        functions.append(function)
-        names.append(function.name)
-    }
-    
-    subscript(name: String) -> Function? {
-        var index = 0
-        
-        while index < names.count {
-            if names[index] == name {
-                return functions[index]
+                return data[index]
             }
             
             index = index &+ 1
@@ -63,8 +33,9 @@ final class Functions {
 public final class Project {
     var sources = [SourceFile]()
     
-    let globals = Globals()
-    let functions = Functions()
+    let globals = Manager<Global>()
+    let functions = Manager<Function>()
+    let types = Manager<LanguageType>()
     let name: String
     let module: Module
     let builder: IRBuilder

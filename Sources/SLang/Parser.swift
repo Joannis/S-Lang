@@ -179,6 +179,10 @@ extension SourceFile {
         guard data[position] == SourceCharacters.leftParenthesis.rawValue else {
             let type = try scanType()
             
+            if type.name == "struct" {
+                return .type(named: name, kind: .struct)
+            }
+            
             return .global(named: name, type: type)
         }
         
@@ -308,6 +312,8 @@ extension SourceFile {
             try reserved.compile(in: self, inFunction: signature, scope: scope)
         } else if project.functions.names.contains(name) {
             
+        } else if project.types.names.contains(name) {
+            
         } else {
             try consume(.colon)
             try assertCharactersAfterWhitespace()
@@ -358,14 +364,33 @@ extension SourceFile {
             }
             
             guard builderState == .global else {
-                fatalError()
+                fatalError("Invalid compiler state")
             }
             
             switch try scanDeclaration() {
+            case .type(let name, _):
+                try assertCharactersAfterWhitespace()
+                
+                try consume(SourceCharacters.equal)
+                
+                let signature = try scanSignature()
+                
+                guard signature.returnType.name == name else {
+                    throw CompilerError.invalidTypeDefinition
+                }
+                
+                let structure = builder.createStruct(name: name)
+                structure.setBody(
+                    signature.arguments.map { _, argument in
+                        return argument.irType
+                    }
+                )
+                
+                try project.types.append(signature.returnType, named: name)
             case .global(let name, let type):
                 let value = try scanAssignment(for: type)
                 
-                try project.globals.append(builder.addGlobal(name, initializer: value))
+                try project.globals.append(builder.addGlobal(name, initializer: value), named: name)
             case .function(let name, let signature):
                 let type = FunctionType(
                     argTypes: signature.arguments.map { type in
@@ -380,7 +405,7 @@ extension SourceFile {
                 
                 try scanCodeBlock(inFunction: signature)
                 
-                try project.functions.append(function)
+                try project.functions.append(function, named: name)
             }
         }
     }
