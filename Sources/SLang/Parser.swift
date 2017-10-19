@@ -1,9 +1,9 @@
 import Foundation
 import LLVM
 
-fileprivate let whitespace = Data("\r\n ".utf8)
+let whitespace = Data("\r\n ".utf8)
 
-fileprivate enum SourceCharacters: UInt8 {
+enum SourceCharacters: UInt8 {
     case stringQuote = 0x22
     case and = 0x26
     case leftParenthesis = 0x28
@@ -42,10 +42,10 @@ fileprivate enum SourceCharacters: UInt8 {
     ])
 }
 
-fileprivate let specialCharacters = whitespace + SourceCharacters.all
+let specialCharacters = whitespace + SourceCharacters.all
 
 extension SourceFile {
-    fileprivate func skipWhitespace(includingNewline: Bool) {
+    func skipWhitespace(includingNewline: Bool) {
         while position < data.count {
             guard whitespace.contains(data[position]) else {
                 return
@@ -59,7 +59,7 @@ extension SourceFile {
         }
     }
     
-    fileprivate func scanString() -> String {
+    func scanString() -> String {
         var string = String()
         string.reserveCapacity(64)
         
@@ -75,7 +75,7 @@ extension SourceFile {
         return string
     }
     
-    fileprivate func scanNonEmptyString() throws -> String {
+    func scanNonEmptyString() throws -> String {
         let string = scanString()
         
         guard string.characters.count > 0 else {
@@ -86,18 +86,18 @@ extension SourceFile {
         return string
     }
     
-    fileprivate func assertMoreCharacters() throws {
+    func assertMoreCharacters() throws {
         guard position < data.count else {
             throw CompilerError.unexpectedEOF
         }
     }
     
-    fileprivate func assertCharactersAfterWhitespace() throws {
+    func assertCharactersAfterWhitespace() throws {
         skipWhitespace(includingNewline: true)
         try assertMoreCharacters()
     }
     
-    fileprivate func charactersBeforeNewline() -> Bool {
+    func charactersBeforeNewline() -> Bool {
         skipWhitespace(includingNewline: false)
     
         guard position < data.count else {
@@ -107,7 +107,7 @@ extension SourceFile {
         return data[position] != 0x0a
     }
     
-    fileprivate func scanSignature() throws -> Signature {
+    func scanSignature() throws -> Signature {
         var arguments = Arguments()
         
         while position < data.count, data[position] != SourceCharacters.rightParenthesis.rawValue {
@@ -162,12 +162,12 @@ extension SourceFile {
         return Signature(arguments: arguments, returnType: type)
     }
     
-    fileprivate func scanType() throws -> LanguageType {
+    func scanType() throws -> LanguageType {
         let name = try scanNonEmptyString()
         return try LanguageType(named: name)
     }
     
-    fileprivate func scanDeclaration() throws -> Declaration {
+    func scanDeclaration() throws -> Declaration {
         try assertCharactersAfterWhitespace()
         
         let name = try scanNonEmptyString()
@@ -189,7 +189,7 @@ extension SourceFile {
         return .function(named: name, signature: signature)
     }
     
-    fileprivate func readLiteral(from literal: String, expecting type: LanguageType) -> IRValue? {
+    func readLiteral(from literal: String, expecting type: LanguageType) -> IRValue? {
         guard literal.characters.count > 0 else {
             return nil
         }
@@ -201,7 +201,7 @@ extension SourceFile {
         return nil
     }
     
-    fileprivate func scanLiteral(expecting type: LanguageType) throws -> IRValue? {
+    func scanLiteral(expecting type: LanguageType) throws -> IRValue? {
         try assertCharactersAfterWhitespace()
         
         let literal = scanString()
@@ -209,7 +209,7 @@ extension SourceFile {
         return readLiteral(from: literal, expecting: type)
     }
     
-    fileprivate func consume(_ char: SourceCharacters) throws {
+    func consume(_ char: SourceCharacters) throws {
         guard data[position] == char.rawValue else {
             throw CompilerError.missingAssignment
         }
@@ -217,7 +217,7 @@ extension SourceFile {
         position = position &+ 1
     }
     
-    fileprivate func scanAssignment(for type: LanguageType) throws -> IRValue {
+    func scanAssignment(for type: LanguageType) throws -> IRValue {
         try assertCharactersAfterWhitespace()
         
         try consume(SourceCharacters.equal)
@@ -234,11 +234,11 @@ extension SourceFile {
         return literal
     }
     
-    fileprivate func isFunctionCall() -> Bool {
+    func isFunctionCall() -> Bool {
         return position < data.count && data[position] == SourceCharacters.leftParenthesis.rawValue
     }
     
-    fileprivate func callFunction(named name: String) throws -> IRValue {
+    func callFunction(named name: String) throws -> IRValue {
         // Enter function call
         position = position &+ 1
         
@@ -256,7 +256,7 @@ extension SourceFile {
         return builder.buildLoad(result)
     }
     
-    fileprivate func getValue(ofType type: LanguageType, scope: Scope) throws -> IRValue {
+    func readValue(ofType type: LanguageType, scope: Scope) throws -> IRValue {
         let string = try scanNonEmptyString()
         
         if isFunctionCall() {
@@ -274,42 +274,40 @@ extension SourceFile {
         throw CompilerError.unknownVariable(string)
     }
     
-    fileprivate func compileStatement(inFunction signature: Signature, scope: Scope) throws {
+    func readValueExpression(ofType type: LanguageType, scope: Scope) throws -> IRValue {
+        var value = try readValue(ofType: type, scope: scope)
+        
+        while charactersBeforeNewline() {
+            let character = data[position]
+            position = position &+ 1
+            
+            try assertCharactersAfterWhitespace()
+            
+            let other = try readValue(ofType: type, scope: scope)
+            
+            switch character {
+            case SourceCharacters.plus.rawValue:
+                value = builder.buildAdd(value, other)
+            case SourceCharacters.minus.rawValue:
+                value = builder.buildSub(value, other)
+            default:
+                throw CompilerError.unknownOperation
+            }
+        }
+        
+        return value
+    }
+    
+    func compileStatement(inFunction signature: Signature, scope: Scope) throws {
         try assertCharactersAfterWhitespace()
         
         let name = try scanNonEmptyString()
         
-        switch name {
-        case "return":
-            if !charactersBeforeNewline() {
-                builder.buildRetVoid()
-                return
-            }
+        if let reserved = ReservedFunction(rawValue: name) {
+            try reserved.compile(in: self, inFunction: signature, scope: scope)
+        } else if project.functions.names.contains(name) {
             
-            try assertCharactersAfterWhitespace()
-            
-            var value = try getValue(ofType: signature.returnType, scope: scope)
-            
-            while charactersBeforeNewline() {
-                let character = data[position]
-                position = position &+ 1
-                
-                try assertCharactersAfterWhitespace()
-                
-                let other = try getValue(ofType: signature.returnType, scope: scope)
-                
-                switch character {
-                case SourceCharacters.plus.rawValue:
-                    value = builder.buildAdd(value, other)
-                case SourceCharacters.minus.rawValue:
-                    value = builder.buildSub(value, other)
-                default:
-                    throw CompilerError.unknownOperation
-                }
-            }
-            
-            builder.buildRet(value)
-        default:
+        } else {
             let type = try scanType()
             let value = builder.buildAlloca(type: type.irType, name: name)
             
@@ -321,7 +319,7 @@ extension SourceFile {
         }
     }
     
-    fileprivate func scanCodeBlock(inFunction signature: Signature) throws {
+    func scanCodeBlock(inFunction signature: Signature) throws {
         try assertCharactersAfterWhitespace()
         
         try consume(.equal)
@@ -384,7 +382,7 @@ extension SourceFile {
     }
 }
 
-fileprivate extension UInt8 {
+extension UInt8 {
     var isNumeric: Bool {
         return self >= 0x30 && self <= 0x39
     }
