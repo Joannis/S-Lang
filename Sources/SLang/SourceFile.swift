@@ -13,6 +13,14 @@ final class Scope {
     
     var variables = [(String, LanguageType, IRValue)]()
     
+    subscript(type expected: String) -> LanguageType? {
+        for (name, type, _) in variables where name == expected {
+            return type
+        }
+        
+        return self.super?[type: expected]
+    }
+    
     subscript(expected: String) -> IRValue? {
         for (name, _, value) in variables where name == expected {
             return value
@@ -29,7 +37,17 @@ enum BuilderState {
     case codeBlock
 }
 
-struct LanguageType {
+final class LanguageType {
+    static func getType(named name: String, from project: Project) throws -> LanguageType {
+        if let type = project.types[name] {
+            return type
+        }
+        
+        return try LanguageType(named: name)
+    }
+    
+    static let primitives = ["Void", "Int8", "Int16", "Int32", "Int64", "struct"]
+    
     init(named name: String) throws {
         self.name = name
         
@@ -49,9 +67,17 @@ struct LanguageType {
         case "Int64":
             self.irType = IntType(width: 64)
             self.integerLiteral = true
+        case "struct":
+            self.irType = nil
         default:
             throw CompilerError.unknownType(name)
         }
+    }
+    
+    init(named name: String, definition: StructureDefinition) {
+        self.name = name
+        self.definition = definition
+        self.irType = definition.type
     }
     
     func makeValue(from literal: String) -> IRValue? {
@@ -70,9 +96,25 @@ struct LanguageType {
     }
     
     let name: String
-    let irType: IRType
+    let irType: IRType!
+    var definition: StructureDefinition?
     var integerLiteral = false
     var void = false
+}
+
+struct StructureDefinition {
+    var arguments = [(String, LanguageType)]()
+    var type: StructType
+}
+
+final class GlobalFunction {
+    let function: Function
+    let signature: Signature
+    
+    init(function: Function, signature: Signature) {
+        self.function = function
+        self.signature = signature
+    }
 }
 
 typealias Arguments = [(String, LanguageType)]

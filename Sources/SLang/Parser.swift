@@ -107,34 +107,76 @@ extension SourceFile {
         return data[position] != 0x0a
     }
     
-    func scanSignature() throws -> Signature {
-        var arguments = Arguments()
+    func forEachArgument<T>(_ read: (() throws -> (T))) throws -> [(String, T)] {
+        var arguments = [(String, T)]()
         
         while position < data.count, data[position] != SourceCharacters.rightParenthesis.rawValue {
             if arguments.count > 0 {
                 try assertCharactersAfterWhitespace()
                 
-                guard data[position] == SourceCharacters.comma.rawValue else {
-                    throw CompilerError.missingCommaAfterArguments(arguments)
-                }
+                try consume(.comma)
             }
             
             try assertCharactersAfterWhitespace()
             
+            let preNamePosition = position
             let name = try scanNonEmptyString()
             
-            try assertCharactersAfterWhitespace()
+            let t: T
             
-            guard data[position] == SourceCharacters.colon.rawValue else {
-                throw CompilerError.missingTypeForDeclaration(name)
+            if data[position] == SourceCharacters.colon.rawValue {
+                try consume(.colon)
+                
+                t = try read()
+            } else {
+                position = preNamePosition
+                
+                t = try read()
             }
             
+            arguments.append((name, t))
+            
+            try assertCharactersAfterWhitespace()
+        }
+        
+        // skip past right parenthesis
+        position = position &+ 1
+        
+        return arguments
+    }
+    
+    func scanTypeArguments() throws -> [(String, LanguageType)] {
+        try assertCharactersAfterWhitespace()
+        try consume(.leftParenthesis)
+        
+        return try forEachArgument {
+            try assertCharactersAfterWhitespace()
+            return try scanType()
+        }
+    }
+    
+    func scanArguments(types: [LanguageType], scope: Scope) throws -> [(String, IRValue)] {
+        var parsed = 0
+        
+        return try forEachArgument {
+            guard parsed < types.count else {
+                throw CompilerError.tooManyArguments
+            }
+            
+            defer { parsed += 1 }
+            
+            try assertCharactersAfterWhitespace()
+            
+            return try readValue(ofType: types[parsed], scope: scope)
+        }
+    }
+    
+    func scanSignature() throws -> Signature {
+        let arguments = try forEachArgument { () throws -> LanguageType in
             try assertCharactersAfterWhitespace()
             
             let typeName = try scanNonEmptyString()
-            let type = try LanguageType(named: typeName)
-            
-            arguments.append((name, type))
+            return try LanguageType(named: typeName)
         }
         
         position = position &+ 1
@@ -164,7 +206,7 @@ extension SourceFile {
     
     func scanType() throws -> LanguageType {
         let name = try scanNonEmptyString()
-        return try LanguageType(named: name)
+        return try LanguageType.getType(named: name, from: project)
     }
     
     func scanDeclaration() throws -> Declaration {
@@ -205,10 +247,19 @@ extension SourceFile {
         return nil
     }
     
-    func scanLiteral(expecting type: LanguageType) throws -> IRValue? {
+    func scanLiteral(expecting type: LanguageType, scope: Scope) throws -> IRValue? {
         try assertCharactersAfterWhitespace()
         
         let literal = scanString()
+        
+        if type.definition != nil {
+            try assertCharactersAfterWhitespace()
+            try consume(.leftParenthesis)
+            
+            let value = try construct(structure: type, scope: scope)
+            
+            return value
+        }
         
         return readLiteral(from: literal, expecting: type)
     }
@@ -221,14 +272,14 @@ extension SourceFile {
         position = position &+ 1
     }
     
-    func scanAssignment(for type: LanguageType) throws -> IRValue {
+    func scanAssignment(for type: LanguageType, scope: Scope) throws -> IRValue {
         try assertCharactersAfterWhitespace()
         
         try consume(SourceCharacters.equal)
         
         try assertCharactersAfterWhitespace()
         
-        guard let literal = try scanLiteral(expecting: type) else {
+        guard let literal = try scanLiteral(expecting: type, scope: scope) else {
             // TODO: Custom types
             throw CompilerError.unknownType(type.name)
         }
@@ -242,35 +293,92 @@ extension SourceFile {
         return position < data.count && data[position] == SourceCharacters.leftParenthesis.rawValue
     }
     
-    func callFunction(named name: String) throws -> IRValue {
-        // Enter function call
-        position = position &+ 1
-        
+    @discardableResult
+    func callFunction(named name: String, withArguments arguments: [IRValue], scope: Scope) throws -> Call {
         guard let function = project.functions[name] else {
             throw CompilerError.unknownFunction(name)
         }
         
-        let arguments = [IRValue]()
+        return builder.buildCall(function.function, args: arguments)
+    }
+    
+    func callFunctionAndReturn(named name: String, withArguments arguments: [IRValue], scope: Scope) throws -> IRValue {
+        let call = try callFunction(named: name, withArguments: arguments, scope: scope)
         
-        try consume(.rightParenthesis)
-        
-        let call = builder.buildCall(function, args: arguments)
         let result = builder.buildAlloca(type: call.type)
         builder.buildStore(call, to: result)
         return builder.buildLoad(result)
+    }
+    
+    func construct(structure: LanguageType, scope: Scope) throws -> IRValue {
+        guard let definition = structure.definition else {
+            throw CompilerError.unknownType(structure.name)
+        }
+        
+        let arguments = try scanArguments(
+            types: definition.arguments.map { _, type in
+                return type
+            },
+            scope: scope
+        )
+        
+        let value = definition.type.constant(values: arguments.map { _, value in
+            return value
+        })
+        
+        return value
     }
     
     func readValue(ofType type: LanguageType, scope: Scope) throws -> IRValue {
         let string = try scanNonEmptyString()
         
         if isFunctionCall() {
-            return try callFunction(named: string)
+            if project.types.names.contains(string) {
+                return try construct(
+                    structure: type,
+                    scope: scope
+                )
+            } else {
+                guard let index = project.functions.names.index(of: string) else {
+                    throw CompilerError.unknownFunction(string)
+                }
+                
+                let expectations = project.functions.data[index].signature.arguments.map { _, type in
+                    return type
+                }
+                
+                let arguments = try scanArguments(
+                    types: expectations,
+                    scope: scope
+                ).map { _, value in
+                    return value
+                }
+                
+                return try callFunctionAndReturn(
+                    named: string,
+                    withArguments: arguments,
+                    scope: scope
+                )
+            }
         }
         
         if let literal = readLiteral(from: string, expecting: type) {
             return literal
-        } else if let variable = scope[string] {
-            return builder.buildLoad(variable)
+        } else if let type = scope[type: string], let variable = scope[string] {
+            if let definition = type.definition, data[position] == SourceCharacters.dot.rawValue {
+                try consume(.dot)
+                let member = try scanNonEmptyString()
+                
+                guard let index = definition.arguments.index(where: { name, _ in
+                    return name == member
+                }) else {
+                    throw CompilerError.invalidMember(member)
+                }
+                
+                return builder.buildLoad(builder.buildStructGEP(variable, index: index))
+            } else {
+                return builder.buildLoad(variable)
+            }
         } else if let global = project.globals[string] {
             return builder.buildLoad(global)
         }
@@ -310,10 +418,21 @@ extension SourceFile {
         
         if let reserved = ReservedFunction(rawValue: name) {
             try reserved.compile(in: self, inFunction: signature, scope: scope)
-        } else if project.functions.names.contains(name) {
+        } else if let index = project.functions.names.index(of: name) {
+            try consume(.leftParenthesis)
             
-        } else if project.types.names.contains(name) {
+            let expectations = project.functions.data[index].signature.arguments.map { _, type in
+                return type
+            }
             
+            let arguments = try scanArguments(
+                types: expectations,
+                scope: scope
+            ).map { _, value in
+                return value
+            }
+            
+            try callFunction(named: name, withArguments: arguments, scope: scope)
         } else {
             try consume(.colon)
             try assertCharactersAfterWhitespace()
@@ -323,7 +442,7 @@ extension SourceFile {
             
             scope.variables.append((name, type, value))
             
-            let assigned = try scanAssignment(for: type)
+            let assigned = try scanAssignment(for: type, scope: scope)
             
             builder.buildStore(assigned, to: value)
         }
@@ -373,22 +492,31 @@ extension SourceFile {
                 
                 try consume(SourceCharacters.equal)
                 
-                let signature = try scanSignature()
+                try assertCharactersAfterWhitespace()
+                let structString = try scanNonEmptyString()
                 
-                guard signature.returnType.name == name else {
+                guard structString == "struct" else {
                     throw CompilerError.invalidTypeDefinition
                 }
                 
                 let structure = builder.createStruct(name: name)
+                
+                let arguments = try scanTypeArguments()
+                
                 structure.setBody(
-                    signature.arguments.map { _, argument in
-                        return argument.irType
+                    arguments.map { argument in
+                        return argument.1.irType
                     }
                 )
                 
-                try project.types.append(signature.returnType, named: name)
+                let type = LanguageType(
+                    named: name,
+                    definition: StructureDefinition(arguments: arguments, type: structure)
+                )
+                
+                try project.types.append(type, named: name)
             case .global(let name, let type):
-                let value = try scanAssignment(for: type)
+                let value = try scanAssignment(for: type, scope: Scope())
                 
                 try project.globals.append(builder.addGlobal(name, initializer: value), named: name)
             case .function(let name, let signature):
@@ -405,7 +533,9 @@ extension SourceFile {
                 
                 try scanCodeBlock(inFunction: signature)
                 
-                try project.functions.append(function, named: name)
+                let functionDefinition = GlobalFunction(function: function, signature: signature)
+                
+                try project.functions.append(functionDefinition, named: name)
             }
         }
     }

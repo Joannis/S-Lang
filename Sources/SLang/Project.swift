@@ -34,7 +34,7 @@ public final class Project {
     var sources = [SourceFile]()
     
     let globals = Manager<Global>()
-    let functions = Manager<Function>()
+    let functions = Manager<GlobalFunction>()
     let types = Manager<LanguageType>()
     let name: String
     let module: Module
