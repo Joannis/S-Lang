@@ -347,6 +347,8 @@ extension SourceFile {
                     return type
                 }
                 
+                try consume(.leftParenthesis)
+                
                 let arguments = try scanArguments(
                     types: expectations,
                     scope: scope
