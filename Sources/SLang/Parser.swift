@@ -302,12 +302,16 @@ extension SourceFile {
         try assertCharactersAfterWhitespace()
         
         let name = try scanNonEmptyString()
+        try assertCharactersAfterWhitespace()
         
         if let reserved = ReservedFunction(rawValue: name) {
             try reserved.compile(in: self, inFunction: signature, scope: scope)
         } else if project.functions.names.contains(name) {
             
         } else {
+            try consume(.colon)
+            try assertCharactersAfterWhitespace()
+            
             let type = try scanType()
             let value = builder.buildAlloca(type: type.irType, name: name)
             
