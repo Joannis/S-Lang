@@ -117,11 +117,23 @@ final class GlobalFunction {
     }
 }
 
+final class InstanceFunction {
+    let instanceType: LanguageType
+    let function: Function
+    let signature: Signature
+    
+    init(type: LanguageType , function: Function, signature: Signature) {
+        self.instanceType = type
+        self.function = function
+        self.signature = signature
+    }
+}
+
 typealias Arguments = [(String, LanguageType)]
 
 struct Signature {
-    let arguments: Arguments
-    let returnType: LanguageType
+    var arguments: Arguments
+    var returnType: LanguageType
     
     init(arguments: Arguments, returnType: LanguageType) {
         self.arguments = arguments

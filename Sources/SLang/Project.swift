@@ -35,6 +35,7 @@ public final class Project {
     
     let globals = Manager<Global>()
     let functions = Manager<GlobalFunction>()
+    let instanceFunctions = Manager<InstanceFunction>()
     let types = Manager<LanguageType>()
     let name: String
     let module: Module

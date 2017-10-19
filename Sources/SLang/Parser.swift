@@ -215,6 +215,43 @@ extension SourceFile {
         let name = try scanNonEmptyString()
         try assertCharactersAfterWhitespace()
         
+        if data[position] == SourceCharacters.dot.rawValue {
+            position = position &+ 1
+            
+            let type = try LanguageType.getType(named: name, from: project)
+            
+            let memberName = try scanNonEmptyString()
+            
+            try assertCharactersAfterWhitespace()
+            try consume(.colon)
+            try assertCharactersAfterWhitespace()
+            try consume(.leftParenthesis)
+            
+            let instanceName = try scanNonEmptyString()
+            
+            try assertCharactersAfterWhitespace()
+            try consume(.colon)
+            try assertCharactersAfterWhitespace()
+            
+            guard try scanNonEmptyString() == name else {
+                throw CompilerError.invalidMember(memberName)
+            }
+            
+            try assertCharactersAfterWhitespace()
+            try consume(.rightParenthesis)
+            try assertCharactersAfterWhitespace()
+            
+            try consume(.minus)
+            try consume(.greater)
+            
+            try assertCharactersAfterWhitespace()
+            
+            position = position &+ 1
+            let signature = try scanSignature()
+            
+            return .instanceFunction(named: memberName, instance: instanceName, type: type, signature: signature)
+        }
+        
         try consume(.colon)
         try assertCharactersAfterWhitespace()
         
@@ -295,11 +332,15 @@ extension SourceFile {
     
     @discardableResult
     func callFunction(named name: String, withArguments arguments: [IRValue], scope: Scope) throws -> Call {
-        guard let function = project.functions[name] else {
-            throw CompilerError.unknownFunction(name)
+        if let function = project.functions[name] {
+            return builder.buildCall(function.function, args: arguments)
         }
         
-        return builder.buildCall(function.function, args: arguments)
+        if let function = project.instanceFunctions[name] {
+            return builder.buildCall(function.function, args: arguments)
+        }
+        
+        throw CompilerError.unknownFunction(name)
     }
     
     func callFunctionAndReturn(named name: String, withArguments arguments: [IRValue], scope: Scope) throws -> IRValue {
@@ -343,9 +384,7 @@ extension SourceFile {
                     throw CompilerError.unknownFunction(string)
                 }
                 
-                let expectations = project.functions.data[index].signature.arguments.map { _, type in
-                    return type
-                }
+                let expectations = project.functions.data[index].signature.arguments.map { $0.1 }
                 
                 try consume(.leftParenthesis)
                 
@@ -366,20 +405,41 @@ extension SourceFile {
         
         if let literal = readLiteral(from: string, expecting: type) {
             return literal
-        } else if let type = scope[type: string], let variable = scope[string] {
+        } else if let type = scope[type: string], let instance = scope[string] {
             if let definition = type.definition, data[position] == SourceCharacters.dot.rawValue {
                 try consume(.dot)
                 let member = try scanNonEmptyString()
                 
-                guard let index = definition.arguments.index(where: { name, _ in
+                if let index = definition.arguments.index(where: { name, _ in
                     return name == member
-                }) else {
-                    throw CompilerError.invalidMember(member)
+                }) {
+                    let member = builder.buildStructGEP(instance, index: index)
+                    return builder.buildLoad(member)
                 }
                 
-                return builder.buildLoad(builder.buildStructGEP(variable, index: index))
+                if isFunctionCall(), let instanceFunction = project.instanceFunctions["\(type.name).\(member)"]
+                {
+                    try consume(.leftParenthesis)
+                    
+                    let arguments = try scanArguments(
+                        types: instanceFunction.signature.arguments.map { $0.1 },
+                        scope: scope
+                    ).map { _, value in
+                        return value
+                    }
+                    
+                    let instance = builder.buildLoad(instance)
+                    
+                    return try callFunctionAndReturn(
+                        named: "\(type.name).\(member)",
+                        withArguments: [instance] + arguments,
+                        scope: scope
+                    )
+                }
+                
+                throw CompilerError.invalidMember(member)
             } else {
-                return builder.buildLoad(variable)
+                return builder.buildLoad(instance)
             }
         } else if let global = project.globals[string] {
             return builder.buildLoad(global)
@@ -435,6 +495,30 @@ extension SourceFile {
             }
             
             try callFunction(named: name, withArguments: arguments, scope: scope)
+        } else if let type = scope[type: name], let variable = scope[name] {
+            if type.definition != nil, data[position] == SourceCharacters.dot.rawValue {
+                try consume(.dot)
+                let member = try scanNonEmptyString()
+                
+                guard isFunctionCall(), let instanceFunction = project.instanceFunctions["\(name).\(member)"] else {
+                    throw CompilerError.invalidMember(member)
+                }
+                
+                try consume(.leftParenthesis)
+                
+                let arguments = try scanArguments(
+                    types: instanceFunction.signature.arguments.map { $0.1 },
+                    scope: scope
+                    ).map { _, value in
+                        return value
+                }
+                
+                try callFunction(
+                    named: name,
+                    withArguments: [variable] + arguments,
+                    scope: scope
+                )
+            }
         } else {
             try consume(.colon)
             try assertCharactersAfterWhitespace()
@@ -450,7 +534,7 @@ extension SourceFile {
         }
     }
     
-    func scanCodeBlock(inFunction signature: Signature) throws {
+    func scanCodeBlock(inFunction signature: Signature, scope: Scope) throws {
         try assertCharactersAfterWhitespace()
         
         try consume(.equal)
@@ -458,8 +542,6 @@ extension SourceFile {
         try assertCharactersAfterWhitespace()
         
         try consume(.codeBlockOpen)
-        
-        let scope = Scope()
         
         while position < data.count {
             try assertCharactersAfterWhitespace()
@@ -522,10 +604,12 @@ extension SourceFile {
                 
                 try project.globals.append(builder.addGlobal(name, initializer: value), named: name)
             case .function(let name, let signature):
+                let arguments = signature.arguments.map { type in
+                    return type.1.irType!
+                }
+                
                 let type = FunctionType(
-                    argTypes: signature.arguments.map { type in
-                        return type.1.irType
-                    },
+                    argTypes: arguments,
                     returnType: signature.returnType.irType
                 )
                 
@@ -533,11 +617,72 @@ extension SourceFile {
                 let entry = function.appendBasicBlock(named: "entry")
                 builder.positionAtEnd(of: entry)
                 
-                try scanCodeBlock(inFunction: signature)
+                let scope = Scope()
+                
+                var index = 0
+                
+                for (name, type) in signature.arguments {
+                    if let definition = type.definition {
+                        let alloc = builder.buildAlloca(type: definition.type)
+                        builder.buildStore(function.parameters[index], to: alloc)
+                        
+                        scope.variables.append((name, type, alloc))
+                    } else {
+                        scope.variables.append((name, type, function.parameters[index]))
+                    }
+                    
+                    index = index &+ 1
+                }
+                
+                try scanCodeBlock(inFunction: signature, scope: scope)
                 
                 let functionDefinition = GlobalFunction(function: function, signature: signature)
                 
                 try project.functions.append(functionDefinition, named: name)
+            case .instanceFunction(let name, let instance, let instanceType, let originalSignature):
+                var signature = originalSignature
+                
+                signature.arguments.insert((instance, instanceType), at: 0)
+                
+                let arguments = signature.arguments.map { type in
+                    return type.1.irType!
+                }
+                
+                let type = FunctionType(
+                    argTypes: arguments,
+                    returnType: signature.returnType.irType
+                )
+                
+                let function = builder.addFunction("\(instanceType.name).\(name)", type: type)
+                let entry = function.appendBasicBlock(named: "entry")
+                builder.positionAtEnd(of: entry)
+                
+                let scope = Scope()
+                
+                var index = 0
+                
+                for (name, type) in signature.arguments {
+                    if let definition = type.definition {
+                        let alloc = builder.buildAlloca(type: definition.type)
+                        builder.buildStore(function.parameters[index], to: alloc)
+                        
+                        scope.variables.append((name, type, alloc))
+                    } else {
+                        scope.variables.append((name, type, function.parameters[index]))
+                    }
+                    
+                    index = index &+ 1
+                }
+                
+                try scanCodeBlock(inFunction: signature, scope: scope)
+                
+                let functionDefinition = InstanceFunction(
+                    type: instanceType,
+                    function: function,
+                    signature: originalSignature
+                )
+                
+                try project.instanceFunctions.append(functionDefinition, named: "\(instanceType.name).\(name)")
             }
         }
     }
