@@ -7,8 +7,8 @@ extension SourceFile {
             return builder.buildCall(function.function, args: arguments)
         }
         
-        if let function = project.instanceFunctions[name] {
-            return builder.buildCall(function.function, args: arguments)
+        if let function = project.instanceFunctions[name]?.function {
+            return builder.buildCall(function, args: arguments)
         }
         
         throw CompilerError.unknownFunction(name)

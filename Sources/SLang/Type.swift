@@ -83,16 +83,17 @@ final class GlobalFunction {
 }
 
 final class InstanceFunction {
-    let instanceType: LanguageType
+    let functionName: String
+    let instanceTypeName: String
     let instanceName: String
-    let function: Function
     let signature: Signature
     var codeBlockPosition: SourcePosition
+    var function: Function?
     
-    init(type: LanguageType, name: String, function: Function, signature: Signature, position: SourcePosition) {
-        self.instanceType = type
-        self.instanceName = name
-        self.function = function
+    init(functionName: String, instanceTypeName: String, instanceName: String, signature: Signature, position: SourcePosition) {
+        self.functionName = functionName
+        self.instanceTypeName = instanceTypeName
+        self.instanceName = instanceName
         self.signature = signature
         self.codeBlockPosition = position
     }

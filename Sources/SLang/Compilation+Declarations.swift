@@ -2,13 +2,11 @@ extension SourceFile {
     func scanDeclaration() throws -> Declaration {
         try assertCharactersAfterWhitespace()
         
-        let name = try scanNonEmptyString()
+        let typeName = try scanNonEmptyString()
         try assertCharactersAfterWhitespace()
         
         if data[position] == SourceCharacters.dot.rawValue {
             position = position &+ 1
-            
-            let type = try LanguageType.getType(named: name, from: project)
             
             let memberName = try scanNonEmptyString()
             
@@ -23,7 +21,7 @@ extension SourceFile {
             try consume(.colon)
             try assertCharactersAfterWhitespace()
             
-            guard try scanNonEmptyString() == name else {
+            guard try scanNonEmptyString() == typeName else {
                 throw CompilerError.invalidMember(memberName)
             }
             
@@ -39,7 +37,7 @@ extension SourceFile {
             position = position &+ 1
             let signature = try scanSignature()
             
-            return .instanceFunction(named: memberName, instance: instanceName, type: type, signature: signature)
+            return .instanceFunction(named: memberName, instance: instanceName, typeName: typeName, signature: signature)
         }
         
         try consume(.colon)
@@ -49,16 +47,16 @@ extension SourceFile {
             let type = try scanType()
             
             if type.name == "struct" {
-                return .type(named: name, kind: .struct)
+                return .type(named: typeName, kind: .struct)
             }
             
-            return .global(named: name, type: type)
+            return .global(named: typeName, type: type)
         }
         
         position = position &+ 1
         
         let signature = try scanSignature()
         
-        return .function(named: name, signature: signature)
+        return .function(named: typeName, signature: signature)
     }
 }

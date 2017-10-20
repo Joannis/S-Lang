@@ -41,13 +41,6 @@ extension SourceFile {
                 try consume(.dot)
                 let member = try scanNonEmptyString()
                 
-                if let index = definition.arguments.index(where: { name, _ in
-                    return name == member
-                }) {
-                    let member = builder.buildStructGEP(instance, index: index)
-                    return builder.buildLoad(member)
-                }
-                
                 if isFunctionCall(), let instanceFunction = project.instanceFunctions["\(type.name).\(member)"]
                 {
                     try consume(.leftParenthesis)
@@ -66,6 +59,13 @@ extension SourceFile {
                         withArguments: [instance] + arguments,
                         scope: scope
                     )
+                }
+                
+                if let index = definition.arguments.index(where: { name, _ in
+                    return name == member
+                }) {
+                    let member = builder.buildStructGEP(instance, index: index)
+                    return builder.buildLoad(member)
                 }
                 
                 throw CompilerError.invalidMember(member)

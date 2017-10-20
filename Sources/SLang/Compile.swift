@@ -58,42 +58,29 @@ extension SourceFile {
                 
                 let function = builder.addFunction(name, type: type)
                 
-                let position = SourcePosition(file: self, position: self.position)
-                let functionDefinition = GlobalFunction(function: function, signature: signature, position: position)
+                let sourcePosition = SourcePosition(file: self, position: self.position)
+                let functionDefinition = GlobalFunction(function: function, signature: signature, position: sourcePosition)
                 
                 try project.functions.append(functionDefinition, named: name)
                 
                 globalFunctions.append(functionDefinition)
                 
                 try skipCodeBlock()
-            case .instanceFunction(let name, let instance, let instanceType, let originalSignature):
-                var signature = originalSignature
+            case .instanceFunction(let name, let instance, let instanceTypeName, let originalSignature):
+                let sourcePosition = SourcePosition(file: self, position: self.position)
                 
-                signature.arguments.insert((instance, instanceType), at: 0)
-                
-                let arguments = signature.arguments.map { type in
-                    return type.1.irType!
-                }
-                
-                let type = FunctionType(
-                    argTypes: arguments,
-                    returnType: signature.returnType.irType
-                )
-                
-                let function = builder.addFunction("\(instanceType.name).\(name)", type: type)
-                let position = SourcePosition(file: self, position: self.position)
+                let functionName = "\(instanceTypeName).\(name)"
                 
                 let functionDefinition = InstanceFunction(
-                    type: instanceType,
-                    name: instance,
-                    function: function,
+                    functionName: functionName,
+                    instanceTypeName: instanceTypeName,
+                    instanceName: instance,
                     signature: originalSignature,
-                    position: position
+                    position: sourcePosition
                 )
                 
-                try project.instanceFunctions.append(functionDefinition, named: "\(instanceType.name).\(name)")
-                
                 instanceFunctions.append(functionDefinition)
+                try project.instanceFunctions.append(functionDefinition, named: functionName)
                 
                 try skipCodeBlock()
             }
@@ -103,71 +90,87 @@ extension SourceFile {
     }
     
     public func compile() throws {
-        while position < data.count {
-            skipWhitespace(includingNewline: true)
+        skipWhitespace(includingNewline: true)
+        
+        guard position < data.count else {
+            return
+        }
+        
+        let (instanceFunctions, globalFunctions) = try scanTopLevel()
+        
+        for definition in instanceFunctions {
+            var signature = definition.signature
             
-            guard position < data.count else {
-                return
+            let instanceType = try LanguageType.getType(named: definition.instanceTypeName, from: project)
+            
+            signature.arguments.insert((definition.instanceName, instanceType), at: 0)
+            
+            let arguments = signature.arguments.map { type in
+                return type.1.irType!
             }
             
-            let (instanceFunctions, globalFunctions) = try scanTopLevel()
+            let type = FunctionType(
+                argTypes: arguments,
+                returnType: signature.returnType.irType
+            )
             
-            for definition in instanceFunctions {
-                let entry = definition.function.appendBasicBlock(named: "entry")
-                builder.positionAtEnd(of: entry)
-                
-                let scope = Scope()
-                
-                let alloc = builder.buildAlloca(type: definition.instanceType.irType)
-                builder.buildStore(definition.function.parameters[0], to: alloc)
-                
-                scope.variables.append((definition.instanceName, definition.instanceType, alloc))
-                
-                var index = 1
-                
-                for (name, type) in definition.signature.arguments {
-                    if let typeDefinition = type.definition {
-                        let alloc = builder.buildAlloca(type: typeDefinition.type)
-                        builder.buildStore(definition.function.parameters[index], to: alloc)
-                        
-                        scope.variables.append((name, type, alloc))
-                    } else {
-                        scope.variables.append((name, type, definition.function.parameters[index]))
-                    }
+            let function = builder.addFunction(definition.functionName, type: type)
+            definition.function = function
+            
+            let entry = function.appendBasicBlock(named: "entry")
+            builder.positionAtEnd(of: entry)
+            
+            let scope = Scope()
+            
+            let alloc = builder.buildAlloca(type: instanceType.irType)
+            builder.buildStore(function.parameters[0], to: alloc)
+            
+            scope.variables.append((definition.instanceName, instanceType, alloc))
+            
+            var index = 1
+            
+            for (name, type) in definition.signature.arguments {
+                if let typeDefinition = type.definition {
+                    let alloc = builder.buildAlloca(type: typeDefinition.type)
+                    builder.buildStore(function.parameters[index], to: alloc)
                     
-                    index = index &+ 1
+                    scope.variables.append((name, type, alloc))
+                } else {
+                    scope.variables.append((name, type, function.parameters[index]))
                 }
                 
-                position = definition.codeBlockPosition.position
-                
-                try scanCodeBlock(inFunction: definition.signature, scope: scope)
+                index = index &+ 1
             }
             
-            for definition in globalFunctions {
-                let entry = definition.function.appendBasicBlock(named: "entry")
-                builder.positionAtEnd(of: entry)
-                
-                let scope = Scope()
-                
-                var index = 0
-                
-                for (name, type) in definition.signature.arguments {
-                    if let typeDefinition = type.definition {
-                        let alloc = builder.buildAlloca(type: typeDefinition.type)
-                        builder.buildStore(definition.function.parameters[index], to: alloc)
-                        
-                        scope.variables.append((name, type, alloc))
-                    } else {
-                        scope.variables.append((name, type, definition.function.parameters[index]))
-                    }
+            position = definition.codeBlockPosition.position
+            
+            try scanCodeBlock(inFunction: definition.signature, scope: scope)
+        }
+        
+        for definition in globalFunctions {
+            let entry = definition.function.appendBasicBlock(named: "entry")
+            builder.positionAtEnd(of: entry)
+            
+            let scope = Scope()
+            
+            var index = 0
+            
+            for (name, type) in definition.signature.arguments {
+                if let typeDefinition = type.definition {
+                    let alloc = builder.buildAlloca(type: typeDefinition.type)
+                    builder.buildStore(definition.function.parameters[index], to: alloc)
                     
-                    index = index &+ 1
+                    scope.variables.append((name, type, alloc))
+                } else {
+                    scope.variables.append((name, type, definition.function.parameters[index]))
                 }
                 
-                position = definition.codeBlockPosition.position
-                
-                try scanCodeBlock(inFunction: definition.signature, scope: scope)
+                index = index &+ 1
             }
+            
+            position = definition.codeBlockPosition.position
+            
+            try scanCodeBlock(inFunction: definition.signature, scope: scope)
         }
     }
 }
