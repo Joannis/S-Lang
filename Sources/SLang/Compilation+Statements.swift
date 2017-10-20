@@ -62,8 +62,8 @@ extension SourceFile {
                 let arguments = try scanArguments(
                     types: instanceFunction.signature.arguments.map { $0.1 },
                     scope: scope
-                    ).map { _, value in
-                        return value
+                ).map { _, value in
+                    return value
                 }
                 
                 try callFunction(

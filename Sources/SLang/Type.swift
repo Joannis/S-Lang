@@ -9,7 +9,7 @@ final class LanguageType {
         return try LanguageType(named: name)
     }
     
-    static let primitives = ["Void", "Int8", "Int16", "Int32", "Int64", "struct"]
+    static let primitives = ["Void", "Int8", "Int16", "Int32", "Int64", "struct", "model"]
     
     init(named name: String) throws {
         self.name = name
@@ -30,7 +30,7 @@ final class LanguageType {
         case "Int64":
             self.irType = IntType(width: 64)
             self.integerLiteral = true
-        case "struct":
+        case "struct", "model":
             self.irType = nil
         default:
             throw CompilerError.unknownType(name)
@@ -68,6 +68,7 @@ final class LanguageType {
 struct StructureDefinition {
     var arguments = [(String, LanguageType)]()
     var type: StructType
+    var kind: TypeKind
 }
 
 final class GlobalFunction {

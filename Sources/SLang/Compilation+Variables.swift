@@ -52,7 +52,11 @@ extension SourceFile {
                             return value
                     }
                     
-                    let instance = builder.buildLoad(instance)
+                    var instance = instance
+                    
+                    if type.definition?.kind == .struct {
+                        instance = builder.buildLoad(instance)
+                    }
                     
                     return try callFunctionAndReturn(
                         named: "\(type.name).\(member)",
@@ -64,8 +68,17 @@ extension SourceFile {
                 if let index = definition.arguments.index(where: { name, _ in
                     return name == member
                 }) {
-                    let member = builder.buildStructGEP(instance, index: index)
-                    return builder.buildLoad(member)
+                    if let kind = type.definition?.kind {
+                        if kind == .struct {
+                            let member = builder.buildStructGEP(instance, index: index)
+                            return builder.buildLoad(member)
+                        } else if kind == .model {
+                            let member = builder.buildStructGEP(instance, index: index)
+                            return builder.buildLoad(member)
+                        }
+                        
+                        throw CompilerError.unknownType(type.name)
+                    }
                 }
                 
                 throw CompilerError.invalidMember(member)

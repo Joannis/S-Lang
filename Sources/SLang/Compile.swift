@@ -14,7 +14,7 @@ extension SourceFile {
             }
             
             switch try scanDeclaration() {
-            case .type(let name, _):
+            case .type(let name, let kind):
                 try assertCharactersAfterWhitespace()
                 
                 try consume(SourceCharacters.equal)
@@ -22,7 +22,7 @@ extension SourceFile {
                 try assertCharactersAfterWhitespace()
                 let structString = try scanNonEmptyString()
                 
-                guard structString == "struct" else {
+                guard structString == kind.rawValue else {
                     throw CompilerError.invalidTypeDefinition
                 }
                 
@@ -38,7 +38,11 @@ extension SourceFile {
                 
                 let type = LanguageType(
                     named: name,
-                    definition: StructureDefinition(arguments: arguments, type: structure)
+                    definition: StructureDefinition(
+                        arguments: arguments,
+                        type: structure,
+                        kind: kind
+                    )
                 )
                 
                 try project.types.append(type, named: name)
@@ -103,11 +107,18 @@ extension SourceFile {
             
             let instanceType = try LanguageType.getType(named: definition.instanceTypeName, from: project)
             
-            signature.arguments.insert((definition.instanceName, instanceType), at: 0)
-            
-            let arguments = signature.arguments.map { type in
+            var arguments = signature.arguments.map { type in
                 return type.1.irType!
             }
+            
+            if instanceType.definition?.kind == .model {
+                let pointer = PointerType(pointee: instanceType.irType)
+                arguments.insert(pointer, at: 0)
+            } else {
+                arguments.insert(instanceType.irType, at: 0)
+            }
+            
+            signature.arguments.insert((definition.instanceName, instanceType), at: 0)
             
             let type = FunctionType(
                 argTypes: arguments,
@@ -122,8 +133,14 @@ extension SourceFile {
             
             let scope = Scope()
             
-            let alloc = builder.buildAlloca(type: instanceType.irType)
-            builder.buildStore(function.parameters[0], to: alloc)
+            let alloc: IRValue
+            
+            if let kind = instanceType.definition?.kind, kind == .struct {
+                alloc = builder.buildAlloca(type: instanceType.irType, name: definition.instanceName)
+                builder.buildStore(function.parameters[0], to: alloc)
+            } else {
+                alloc = function.parameters[0]
+            }
             
             scope.variables.append((definition.instanceName, instanceType, alloc))
             
@@ -131,10 +148,14 @@ extension SourceFile {
             
             for (name, type) in definition.signature.arguments {
                 if let typeDefinition = type.definition {
-                    let alloc = builder.buildAlloca(type: typeDefinition.type)
-                    builder.buildStore(function.parameters[index], to: alloc)
-                    
-                    scope.variables.append((name, type, alloc))
+                    if typeDefinition.kind == .struct {
+                        let alloc = builder.buildAlloca(type: typeDefinition.type)
+                        builder.buildStore(function.parameters[index], to: alloc)
+                        
+                        scope.variables.append((name, type, alloc))
+                    } else {
+                        scope.variables.append((name, type, function.parameters[index]))
+                    }
                 } else {
                     scope.variables.append((name, type, function.parameters[index]))
                 }

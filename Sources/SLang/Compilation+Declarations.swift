@@ -46,8 +46,8 @@ extension SourceFile {
         guard data[position] == SourceCharacters.leftParenthesis.rawValue else {
             let type = try scanType()
             
-            if type.name == "struct" {
-                return .type(named: typeName, kind: .struct)
+            if let kind = TypeKind(rawValue: type.name) {
+                return .type(named: typeName, kind: kind)
             }
             
             return .global(named: typeName, type: type)
