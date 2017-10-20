@@ -88,13 +88,7 @@ extension SourceFile {
     }
     
     func scanCodeBlock(inFunction signature: Signature, scope: Scope) throws {
-        try assertCharactersAfterWhitespace()
-        
-        try consume(.equal)
-        
-        try assertCharactersAfterWhitespace()
-        
-        try consume(.codeBlockOpen)
+        try enterCodeBlock()
         
         while position < data.count {
             try assertCharactersAfterWhitespace()

@@ -73,22 +73,28 @@ struct StructureDefinition {
 final class GlobalFunction {
     let function: Function
     let signature: Signature
+    var codeBlockPosition: SourcePosition
     
-    init(function: Function, signature: Signature) {
+    init(function: Function, signature: Signature, position: SourcePosition) {
         self.function = function
         self.signature = signature
+        self.codeBlockPosition = position
     }
 }
 
 final class InstanceFunction {
     let instanceType: LanguageType
+    let instanceName: String
     let function: Function
     let signature: Signature
+    var codeBlockPosition: SourcePosition
     
-    init(type: LanguageType , function: Function, signature: Signature) {
+    init(type: LanguageType, name: String, function: Function, signature: Signature, position: SourcePosition) {
         self.instanceType = type
+        self.instanceName = name
         self.function = function
         self.signature = signature
+        self.codeBlockPosition = position
     }
 }
 

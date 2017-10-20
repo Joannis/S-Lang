@@ -21,3 +21,7 @@ public final class SourceFile {
     }
 }
 
+struct SourcePosition {
+    var file: SourceFile
+    var position: Int
+}

@@ -42,3 +42,9 @@ enum SourceCharacters: UInt8 {
 }
 
 let specialCharacters = whitespace + SourceCharacters.all
+let specialCharactersExclDot = { () -> Data in
+    var special = specialCharacters
+    special.remove(at: special.index(of: SourceCharacters.dot.rawValue)!)
+    
+    return special
+}()

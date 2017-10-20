@@ -7,8 +7,6 @@ enum ReservedFunction: String {
         case .if:
             try source.assertCharactersAfterWhitespace()
             
-            
-            
             try source.consume(.codeBlockOpen)
             try source.assertCharactersAfterWhitespace()
             
@@ -23,6 +21,25 @@ enum ReservedFunction: String {
             let value = try source.readValueExpression(ofType: signature.returnType, scope: scope)
             
             source.builder.buildRet(value)
+        }
+    }
+    
+    func skip(in source: SourceFile) throws {
+        switch self {
+        case .if:
+            try source.assertCharactersAfterWhitespace()
+            
+            try source.consume(.codeBlockOpen)
+            try source.assertCharactersAfterWhitespace()
+            
+        case .return:
+            if !source.charactersBeforeNewline() {
+                return
+            }
+            
+            try source.assertCharactersAfterWhitespace()
+            
+            try source.skipValueExpression()
         }
     }
 }
