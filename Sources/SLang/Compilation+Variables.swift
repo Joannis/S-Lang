@@ -1,6 +1,11 @@
 import LLVM
 
 extension SourceFile {
+    /// Reads a value by scanning the statement at the current position in the source file
+    ///
+    /// If necessary, accesses the expected type and scope
+    ///
+    /// TODO: Check types for functions and variables, throw proper errors
     func readValue(ofType type: LanguageType, scope: Scope) throws -> IRValue {
         let string = try scanNonEmptyString()
         

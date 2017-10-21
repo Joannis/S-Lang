@@ -1,17 +1,22 @@
 import LLVM
 
 extension SourceFile {
+    /// Reads a value expression of a specific type, such as an Int64
     func readValueExpression(ofType type: LanguageType, scope: Scope) throws -> IRValue {
         var value = try readValue(ofType: type, scope: scope)
         
+        // If this statement is longer, try to parse it
         while charactersBeforeNewline() {
+            // Try to parse an operator
             let character = data[position]
             position = position &+ 1
             
             try assertCharactersAfterWhitespace()
             
+            // Read the next value
             let other = try readValue(ofType: type, scope: scope)
             
+            // Change behaviour depending on the operator
             switch character {
             case SourceCharacters.plus.rawValue:
                 value = builder.buildAdd(value, other)
@@ -25,14 +30,19 @@ extension SourceFile {
         return value
     }
     
+    // Compile a statement within a function
     func compileStatement(inFunction signature: Signature, scope: Scope) throws {
         try assertCharactersAfterWhitespace()
         
+        // Scan the first statement name
         let name = try scanNonEmptyString()
         try assertCharactersAfterWhitespace()
         
+        // If this is a reserved name such as `if` or `return
         if let reserved = ReservedFunction(rawValue: name) {
             try reserved.compile(in: self, inFunction: signature, scope: scope)
+            
+        // If this is a global function
         } else if let index = project.functions.names.index(of: name) {
             try consume(.leftParenthesis)
             
@@ -40,6 +50,7 @@ extension SourceFile {
                 return type
             }
             
+            // Scan for arguments
             let arguments = try scanArguments(
                 types: expectations,
                 scope: scope
@@ -47,8 +58,11 @@ extension SourceFile {
                     return value
             }
             
+            // Call the function without fetching the return values
             try callFunction(named: name, withArguments: arguments, scope: scope)
+        // If accessing an instance
         } else if let type = scope[type: name], let variable = scope[name] {
+            // If accessedby `dot` notation, accessing a property
             if type.definition != nil, data[position] == SourceCharacters.dot.rawValue {
                 try consume(.dot)
                 let member = try scanNonEmptyString()
@@ -56,53 +70,68 @@ extension SourceFile {
                 
                 let functionName = "\(type.name).\(member)"
                 
-                guard
-                    isFunctionCall(),
-                    let instanceFunction = project.instanceFunctions[functionName]
-                else {
-                    try assertCharactersAfterWhitespace()
-                    try consume(.equal)
-                    try assertCharactersAfterWhitespace()
+                // If this is a function call
+                if isFunctionCall(), let instanceFunction = project.instanceFunctions[functionName] {
+                    try consume(.leftParenthesis)
                     
-                    guard let index = type.definition?.arguments.index(where: { name, _ in
-                        return name == member
-                    }) else {
-                        throw CompilerError.invalidMember(member)
+                    // Scan for arguments
+                    let arguments = try scanArguments(
+                        types: instanceFunction.signature.arguments.map { $0.1 },
+                        scope: scope
+                        ).map { _, value in
+                            return value
                     }
                     
-                    let newValue = try readValue(ofType: type, scope: scope)
-                    let element = builder.buildStructGEP(variable, index: index)
+                    // Call the function, ditch the result
+                    try callFunction(
+                        named: functionName,
+                        withArguments: [variable] + arguments,
+                        scope: scope
+                    )
                     
-                    builder.buildStore(newValue, to: element)
                     return
                 }
                 
-                try consume(.leftParenthesis)
+                // Otherwise, expect an assignment
+                try assertCharactersAfterWhitespace()
+                try consume(.equal)
+                try assertCharactersAfterWhitespace()
                 
-                let arguments = try scanArguments(
-                    types: instanceFunction.signature.arguments.map { $0.1 },
-                    scope: scope
-                ).map { _, value in
-                    return value
+                // Find the member type
+                guard let index = type.definition?.arguments.index(where: { name, _ in
+                    return name == member
+                }) else {
+                    throw CompilerError.invalidMember(member)
                 }
                 
-                try callFunction(
-                    named: functionName,
-                    withArguments: [variable] + arguments,
-                    scope: scope
-                )
+                // Read the new value of this type
+                let newValue = try readValue(ofType: type, scope: scope)
+                
+                // Store the new value into the member
+                let element = builder.buildStructGEP(variable, index: index)
+                builder.buildStore(newValue, to: element)
+            } else {
+                fatalError("Instance left unused, no idea what to do!")
             }
+        // If this is a variable definition
         } else if data[position] == SourceCharacters.colon.rawValue {
+            // Expect an explicit type definition
             try consume(.colon)
             try assertCharactersAfterWhitespace()
             
+            // Scan for the type
             let type = try scanType()
+            
+            // Allocate this type
             let value = builder.buildAlloca(type: type.irType, name: name)
             
+            // Add the variable to this scope
             scope.variables.append((name, type, value))
             
+            // Scan for assignment
             let assigned = try scanAssignment(for: type, scope: scope)
             
+            // Store the new value into this allocated space
             builder.buildStore(assigned, to: value)
         } else if let type = scope[type: name], let variable = scope[name] {
             try consume(.equal)
@@ -114,7 +143,8 @@ extension SourceFile {
         }
     }
     
-    func scanCodeBlock(inFunction signature: Signature, scope: Scope) throws {
+    // Scans and compiles all statements in a code block from the current position
+    func compileCodeBlock(inFunction signature: Signature, scope: Scope) throws {
         try enterCodeBlock()
         
         while position < data.count {

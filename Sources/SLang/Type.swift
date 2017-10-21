@@ -4,6 +4,7 @@ extension Manager where Type == LanguageType {
     static func `default`() throws -> Manager<LanguageType> {
         let manager = Manager<LanguageType>()
         
+        try manager.append(.any)
         try manager.append(.void)
         try manager.append(.bool)
         try manager.append(.int8)
@@ -30,6 +31,7 @@ final class LanguageType {
     
     static let primitives = ["Void", "Int8", "Int16", "Int32", "Int64", "struct", "model"]
     
+    static let any = try! LanguageType(named: "Any")
     static let void = try! LanguageType(named: "Void")
     static let bool = try! LanguageType(named: "Bool")
     static let int8 = try! LanguageType(named: "Int8")
@@ -41,6 +43,8 @@ final class LanguageType {
         self.name = name
         
         switch name {
+        case "Any":
+            self.irType = nil
         case "Void":
             self.irType = VoidType()
             self.void = true
