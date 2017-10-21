@@ -36,7 +36,7 @@ public final class Project {
     let globals = Manager<Global>()
     let functions = Manager<GlobalFunction>()
     let instanceFunctions = Manager<InstanceFunction>()
-    let types = Manager<LanguageType>()
+    let types = try! Manager<LanguageType>.default()
     let name: String
     let module: Module
     let builder: IRBuilder

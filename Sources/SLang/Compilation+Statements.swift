@@ -52,9 +52,29 @@ extension SourceFile {
             if type.definition != nil, data[position] == SourceCharacters.dot.rawValue {
                 try consume(.dot)
                 let member = try scanNonEmptyString()
+                try assertCharactersAfterWhitespace()
                 
-                guard isFunctionCall(), let instanceFunction = project.instanceFunctions["\(name).\(member)"] else {
-                    throw CompilerError.invalidMember(member)
+                let functionName = "\(type.name).\(member)"
+                
+                guard
+                    isFunctionCall(),
+                    let instanceFunction = project.instanceFunctions[functionName]
+                else {
+                    try assertCharactersAfterWhitespace()
+                    try consume(.equal)
+                    try assertCharactersAfterWhitespace()
+                    
+                    guard let index = type.definition?.arguments.index(where: { name, _ in
+                        return name == member
+                    }) else {
+                        throw CompilerError.invalidMember(member)
+                    }
+                    
+                    let newValue = try readValue(ofType: type, scope: scope)
+                    let element = builder.buildStructGEP(variable, index: index)
+                    
+                    builder.buildStore(newValue, to: element)
+                    return
                 }
                 
                 try consume(.leftParenthesis)
@@ -67,12 +87,12 @@ extension SourceFile {
                 }
                 
                 try callFunction(
-                    named: name,
+                    named: functionName,
                     withArguments: [variable] + arguments,
                     scope: scope
                 )
             }
-        } else {
+        } else if data[position] == SourceCharacters.colon.rawValue {
             try consume(.colon)
             try assertCharactersAfterWhitespace()
             
@@ -84,6 +104,13 @@ extension SourceFile {
             let assigned = try scanAssignment(for: type, scope: scope)
             
             builder.buildStore(assigned, to: value)
+        } else if let type = scope[type: name], let variable = scope[name] {
+            try consume(.equal)
+            try assertCharactersAfterWhitespace()
+            
+            let newValue = try readValue(ofType: type, scope: scope)
+            
+            builder.buildStore(newValue, to: variable)
         }
     }
     

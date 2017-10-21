@@ -1,5 +1,24 @@
 import LLVM
 
+extension Manager where Type == LanguageType {
+    static func `default`() throws -> Manager<LanguageType> {
+        let manager = Manager<LanguageType>()
+        
+        try manager.append(.void)
+        try manager.append(.bool)
+        try manager.append(.int8)
+        try manager.append(.int16)
+        try manager.append(.int32)
+        try manager.append(.int64)
+        
+        return manager
+    }
+    
+    func append(_ type: LanguageType) throws {
+        try self.append(type, named: type.name)
+    }
+}
+
 final class LanguageType {
     static func getType(named name: String, from project: Project) throws -> LanguageType {
         if let type = project.types[name] {
@@ -11,6 +30,13 @@ final class LanguageType {
     
     static let primitives = ["Void", "Int8", "Int16", "Int32", "Int64", "struct", "model"]
     
+    static let void = try! LanguageType(named: "Void")
+    static let bool = try! LanguageType(named: "Bool")
+    static let int8 = try! LanguageType(named: "Int8")
+    static let int16 = try! LanguageType(named: "Int16")
+    static let int32 = try! LanguageType(named: "Int32")
+    static let int64 = try! LanguageType(named: "Int64")
+    
     init(named name: String) throws {
         self.name = name
         
@@ -18,6 +44,9 @@ final class LanguageType {
         case "Void":
             self.irType = VoidType()
             self.void = true
+        case "Bool":
+            self.irType = IntType(width: 1)
+            self.booleanLiteral = true
         case "Int8":
             self.irType = IntType(width: 8)
             self.integerLiteral = true
@@ -61,6 +90,7 @@ final class LanguageType {
     let name: String
     let irType: IRType!
     var definition: StructureDefinition?
+    var booleanLiteral = false
     var integerLiteral = false
     var void = false
 }

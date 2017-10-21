@@ -30,7 +30,10 @@ extension SourceFile {
     }
     
     func skipValue() throws {
-        _ = try scanNonEmptyString()
+        if charactersBeforeNewline() {
+            _ = try scanNonEmptyString()
+        }
+        
         
         if isFunctionCall() {
             try consume(.leftParenthesis)
@@ -71,11 +74,15 @@ extension SourceFile {
                 
                 try skipArguments()
             }
-        } else {
+        } else if data[position] == SourceCharacters.colon.rawValue {
             try consume(.colon)
             try assertCharactersAfterWhitespace()
             _ = try scanNonEmptyString()
             try assertCharactersAfterWhitespace()
+            try consume(.equal)
+            try assertCharactersAfterWhitespace()
+            try skipValue()
+        } else {
             try consume(.equal)
             try assertCharactersAfterWhitespace()
             try skipValue()
