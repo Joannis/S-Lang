@@ -142,17 +142,21 @@ final class Parser {
         var base: Int?
         var tokens = [String]()
         
+        func appendBase() {
+            if let base = base {
+                guard let string = String(data: file[base..<offset], encoding: .utf8) else {
+                    fatalError()
+                }
+                
+                tokens.append(string)
+            }
+        }
+        
         while moreBytes, file[offset] != .newLine {
             defer { offset = offset &+ 1 }
             
             guard file[offset] != .space && file[offset] != .carriageReturn else {
-                if let base = base {
-                    guard let string = String(data: file[base..<offset], encoding: .utf8) else {
-                        fatalError()
-                    }
-                    
-                    tokens.append(string)
-                }
+                appendBase()
                 
                 base = nil
                 continue
@@ -163,6 +167,8 @@ final class Parser {
             }
         }
         
+        appendBase()
+        
         return tokens
     }
     
@@ -171,6 +177,8 @@ final class Parser {
     }
     
     func hasToken(_ byte: Byte) -> Bool {
+        let base = offset
+        defer { offset = base }
         skipWhitespace()
         
         guard moreBytes, file[offset] == byte else {
