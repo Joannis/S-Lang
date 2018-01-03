@@ -25,7 +25,7 @@ final class Parser {
             case .func:
                 let function = parseFunction()
                 ast.functions[function.name] = function
-            case .let:
+            case .const:
                 fatalError()
             case .var:
                 fatalError()
@@ -96,7 +96,7 @@ final class Parser {
                 switch keyword {
                 case .func, .data, .model:
                     fatalError()
-                case .var, .let:
+                case .var, .const:
                     let name = parseString().assert()
                     
                     token(.colon)
@@ -107,7 +107,7 @@ final class Parser {
                     let value = parseStatement(name: firstStatementToken)
                     
                     statements.append(
-                        .createVariable(name: name, value: value, type: type, constant: keyword == .let)
+                        .createVariable(name: name, value: value, type: type, constant: keyword == .const)
                     )
                 case .return:
                     if hasToken(.rightCurlyBracket) {
@@ -251,7 +251,7 @@ struct Token {
 }
 
 enum Keyword: String {
-    case model, data, `var`, `let`, `func`, `return`
+    case model, data, `var`, const, `func`, `return`
 }
 
 enum State {

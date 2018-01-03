@@ -1,8 +1,8 @@
 func main() -> Void {
-    let a: Int = 3
-    let b: Int = 4
+    const a: Int = 3
+    const b: Int = 4
 
-    let c: Int = a + b
+    const c: Int = a + b
 
     return
 }
