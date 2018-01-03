@@ -2,12 +2,48 @@
   "object": {
     "pins": [
       {
+        "package": "Async",
+        "repositoryURL": "https://github.com/vapor/async.git",
+        "state": {
+          "branch": "beta",
+          "revision": "084ddafacdfd787aab905b8b63b34d13ae104d15",
+          "version": null
+        }
+      },
+      {
         "package": "CLibGit2",
         "repositoryURL": "https://github.com/BrettRToomey/CLibGit2.git",
         "state": {
           "branch": "master",
           "revision": "14f8e54929276ccf7c9f93130035bd860192d726",
           "version": null
+        }
+      },
+      {
+        "package": "Console",
+        "repositoryURL": "https://github.com/vapor/console.git",
+        "state": {
+          "branch": "beta",
+          "revision": "b61cb141669f75ec8d820942cb04637a058d508d",
+          "version": null
+        }
+      },
+      {
+        "package": "Core",
+        "repositoryURL": "https://github.com/vapor/core.git",
+        "state": {
+          "branch": "beta",
+          "revision": "05a87407d12f99abf66971304d277cf3b9e329fb",
+          "version": null
+        }
+      },
+      {
+        "package": "FileCheck",
+        "repositoryURL": "https://github.com/trill-lang/FileCheck.git",
+        "state": {
+          "branch": null,
+          "revision": "1c966580c83cf2e41be802992d46fe2edfc5c95f",
+          "version": "0.0.5"
         }
       },
       {
@@ -25,6 +61,15 @@
         "state": {
           "branch": "master",
           "revision": "950ad4134720bc95e3315f8f5c25d01090a0114a",
+          "version": null
+        }
+      },
+      {
+        "package": "Service",
+        "repositoryURL": "https://github.com/vapor/service.git",
+        "state": {
+          "branch": "beta",
+          "revision": "6693b1a46db13899b2ead30d91bd77950d9b5a4c",
           "version": null
         }
       },
